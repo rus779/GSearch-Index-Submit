@@ -2,7 +2,6 @@ import os
 import json
 import subprocess
 import venv
-import shutil
 
 def ask_question(question, default=None):
     if default:
@@ -39,12 +38,12 @@ SITEMAP_DIR = os.path.join(FILES_DIR, 'sitemaps')
 API_KEY = '{api_key}'
 CUSTOM_SEARCH_ENGINE_ID = '{custom_search_engine_id}'
 
-# Sorting rules
+# Sorting rules (generic placeholders)
 SORTING_RULES = {{
-    '1_urls': lambda url: '/roadmap/' in url and '/ru/' not in url,
-    '2_urls': lambda url: '/roadmap/' not in url and '/ru/' not in url,
-    '3_urls': lambda url: '/roadmap/' in url and '/ru/' in url,
-    '4_urls': lambda url: '/roadmap/' not in url and '/ru/' in url
+    '1_urls': lambda url: True,  # Replace with your first sorting rule
+    '2_urls': lambda url: True,  # Replace with your second sorting rule
+    '3_urls': lambda url: True,  # Replace with your third sorting rule
+    '4_urls': lambda url: True   # Replace with your fourth sorting rule
 }}
 
 # Alphabetical sorting option

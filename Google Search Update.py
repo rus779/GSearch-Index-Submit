@@ -112,46 +112,35 @@ def extract_urls():
     logging.info(f"URLs have been saved to {OUTPUT_CSV_FILE}")
     return len(new_urls)
 
-def submit_to_indexing_api():
+def check_indexing_status():
     df = pd.read_csv(OUTPUT_CSV_FILE)
     df['Indexing Status'] = df['Indexing Status'].fillna('')
     df['Date of Index'] = df['Date of Index'].fillna('')
-    urls_to_submit = df[df['Indexing Status'] == '']['URL'].tolist()[:MAX_INDEXING_URLS_PER_RUN]
+    urls_to_check = df[df['Indexing Status'] == '']['URL'].tolist()[:MAX_INDEXING_URLS_PER_RUN]
 
-    ENDPOINT = "https://indexing.googleapis.com/v3/urlNotifications:publish"
+    service = build("customsearch", "v1", developerKey=API_KEY)
     changed_indexing_status_count = 0
-    quota_exceeded = False
 
-    for url in urls_to_submit:
-        content = {
-            'url': url.strip(),
-            'type': "URL_UPDATED"
-        }
-        json_ctn = json.dumps(content)
-        response, content = http.request(ENDPOINT, method="POST", body=json_ctn, headers={'Content-Type': 'application/json'})
-        result = json.loads(content.decode())
-
-        if "error" in result:
-            if result["error"]["code"] == 429:
-                logging.error("Google Quota exceeded for Indexing (Search API)")
-                quota_exceeded = True
-                break
+    for url in urls_to_check:
+        try:
+            result = service.cse().list(q=f"site:{url}", cx=CUSTOM_SEARCH_ENGINE_ID).execute()
+            if 'items' in result and len(result['items']) > 0:
+                df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['Indexed', datetime.now().strftime("%Y-%m-%d")]
+                changed_indexing_status_count += 1
             else:
-                df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['Error', '']
-        else:
-            df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['Indexed', datetime.now().strftime("%Y-%m-%d")]
-            changed_indexing_status_count += 1
+                df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['Not Indexed', datetime.now().strftime("%Y-%m-%d")]
+        except Exception as e:
+            logging.error(f"Error checking indexing status for URL {url}: {str(e)}")
+            df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['Error', '']
 
     df.to_csv(OUTPUT_CSV_FILE, index=False)
-    logging.info(f"Indexing results have been updated in {OUTPUT_CSV_FILE}")
-    return changed_indexing_status_count, quota_exceeded
+    logging.info(f"Indexing status check results have been updated in {OUTPUT_CSV_FILE}")
+    return changed_indexing_status_count
 
-def submit_to_search_console():
+def submit_to_indexing_api():
     df = pd.read_csv(OUTPUT_CSV_FILE)
     df['Submitting Status'] = df['Submitting Status'].fillna('')
     df['Date of Submitting'] = df['Date of Submitting'].fillna('')
-    df['Indexing Status'] = df['Indexing Status'].fillna('')
-
     urls_to_submit = df[
         ((df['Indexing Status'] == 'Not Indexed') | (df['Indexing Status'] == '')) &
         (df['Submitting Status'] == '')
@@ -176,8 +165,6 @@ def submit_to_search_console():
                 quota_exceeded = True
                 break
             else:
-                error_message = f"Error submitting URL {url}: {result['error']}"
-                logging.error(error_message)
                 df.loc[df['URL'] == url, ['Submitting Status', 'Date of Submitting']] = ['Error', '']
         else:
             df.loc[df['URL'] == url, ['Submitting Status', 'Date of Submitting']] = ['Submitted', result['urlNotificationMetadata']['latestUpdate']['notifyTime']]
@@ -187,7 +174,7 @@ def submit_to_search_console():
     logging.info(f"Submission results have been updated in {OUTPUT_CSV_FILE}")
     return changed_submitting_status_count, quota_exceeded
 
-def log_results(urls_added_count, changed_indexing_status_count, changed_submitting_status_count, 
+def log_results(urls_added_count, changed_indexing_status_count, changed_submitting_status_count,
                 indexing_quota_exceeded, submitting_quota_exceeded):
     df = pd.read_csv(OUTPUT_CSV_FILE)
     total_urls = len(df)
@@ -224,8 +211,8 @@ def log_results(urls_added_count, changed_indexing_status_count, changed_submitt
 def main():
     try:
         urls_added_count = extract_urls()
-        changed_submitting_status_count, submitting_quota_exceeded = submit_to_search_console()
         changed_indexing_status_count, indexing_quota_exceeded = submit_to_indexing_api()
+        changed_submitting_status_count, submitting_quota_exceeded = submit_to_indexing_api()
         log_results(urls_added_count, changed_indexing_status_count, changed_submitting_status_count,
                     indexing_quota_exceeded, submitting_quota_exceeded)
     except Exception as e:
