@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as ET
 import os
+from googleapiclient.errors import HttpError
 from datetime import datetime, timedelta
 from oauth2client.service_account import ServiceAccountCredentials
 import httplib2
@@ -83,6 +84,7 @@ def extract_urls():
         if USE_ALPHABETICAL_SORTING:
             matching_urls.sort()
         sorted_urls.extend(matching_urls)
+
     sorted_urls = list(dict.fromkeys(sorted_urls))
 
     if os.path.exists(OUTPUT_CSV_FILE):
@@ -120,6 +122,7 @@ def check_indexing_status():
 
     service = build("customsearch", "v1", developerKey=API_KEY)
     changed_indexing_status_count = 0
+    quota_exceeded = False
 
     for url in urls_to_check:
         try:
@@ -129,21 +132,30 @@ def check_indexing_status():
                 changed_indexing_status_count += 1
             else:
                 df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['Not Indexed', datetime.now().strftime("%Y-%m-%d")]
-        except Exception as e:
-            logging.error(f"Error checking indexing status for URL {url}: {str(e)}")
-            df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['Error', '']
+        except HttpError as e:
+            if e.resp.status == 429:
+                logging.error(f"Google Quota exceeded for Indexing (Search API): {str(e)}")
+                quota_exceeded = True
+                break
+            else:
+                logging.error(f"Error checking indexing status for URL {url}: {str(e)}")
+                df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['', '']
 
     df.to_csv(OUTPUT_CSV_FILE, index=False)
     logging.info(f"Indexing status check results have been updated in {OUTPUT_CSV_FILE}")
-    return changed_indexing_status_count
+    
+    if quota_exceeded:
+        logging.warning(f"Indexing status check stopped after processing {changed_indexing_status_count} URLs due to quota limit.")
+    
+    return changed_indexing_status_count, quota_exceeded
 
 def submit_to_indexing_api():
     df = pd.read_csv(OUTPUT_CSV_FILE)
+    df['Indexing Status'] = df['Indexing Status'].fillna('')
     df['Submitting Status'] = df['Submitting Status'].fillna('')
-    df['Date of Submitting'] = df['Date of Submitting'].fillna('')
     urls_to_submit = df[
-        ((df['Indexing Status'] == 'Not Indexed') | (df['Indexing Status'] == '')) &
-        (df['Submitting Status'] == '')
+        ((df['Indexing Status'] == 'Not Indexed') | (df['Indexing Status'] == '') | df['Indexing Status'].isna()) &
+        ((df['Submitting Status'] == '') | df['Submitting Status'].isna())
     ]['URL'].tolist()[:MAX_SUBMISSION_URLS_PER_RUN]
 
     ENDPOINT = "https://indexing.googleapis.com/v3/urlNotifications:publish"
@@ -156,22 +168,27 @@ def submit_to_indexing_api():
             'type': "URL_UPDATED"
         }
         json_ctn = json.dumps(content)
-        response, content = http.request(ENDPOINT, method="POST", body=json_ctn, headers={'Content-Type': 'application/json'})
-        result = json.loads(content.decode())
+        try:
+            response, content = http.request(ENDPOINT, method="POST", body=json_ctn, headers={'Content-Type': 'application/json'})
+            result = json.loads(content.decode())
 
-        if "error" in result:
-            if result["error"]["code"] == 429:
-                logging.error("Google Quota exceeded for Submitting (Index API)")
+            if response.status == 429 or "error" in result and result["error"].get("code") == 429:
+                logging.error(f"Google Quota exceeded for Submitting (Index API): {result.get('error', {}).get('message', 'Unknown error')}")
                 quota_exceeded = True
                 break
+            elif "error" in result:
+                logging.error(f"Error submitting URL {url}: {result['error'].get('message', 'Unknown error')}")
+                df.loc[df['URL'] == url, ['Submitting Status', 'Date of Submitting']] = ['', '']
             else:
-                df.loc[df['URL'] == url, ['Submitting Status', 'Date of Submitting']] = ['Error', '']
-        else:
-            df.loc[df['URL'] == url, ['Submitting Status', 'Date of Submitting']] = ['Submitted', result['urlNotificationMetadata']['latestUpdate']['notifyTime']]
-            changed_submitting_status_count += 1
+                df.loc[df['URL'] == url, ['Submitting Status', 'Date of Submitting']] = ['Submitted', datetime.now().strftime("%Y-%m-%d")]
+                changed_submitting_status_count += 1
+        except Exception as e:
+            logging.error(f"Exception while submitting URL {url}: {str(e)}")
+            df.loc[df['URL'] == url, ['Submitting Status', 'Date of Submitting']] = ['', '']
 
     df.to_csv(OUTPUT_CSV_FILE, index=False)
     logging.info(f"Submission results have been updated in {OUTPUT_CSV_FILE}")
+    
     return changed_submitting_status_count, quota_exceeded
 
 def log_results(urls_added_count, changed_indexing_status_count, changed_submitting_status_count,
@@ -190,16 +207,16 @@ def log_results(urls_added_count, changed_indexing_status_count, changed_submitt
         f"   now = {changed_indexing_status_count}\n"
         f"   overall = {total_indexed}\n"
     )
-    
+
     if indexing_quota_exceeded:
         results_message += "Google Quota exceeded for Indexing (Search API)\n"
-    
+
     results_message += (
         f"3. URLs submitted\n"
         f"   now = {changed_submitting_status_count}\n"
         f"   overall = {total_submitted}\n"
     )
-    
+
     if submitting_quota_exceeded:
         results_message += "Google Quota exceeded for Submitting (Index API)\n"
 
@@ -211,8 +228,9 @@ def log_results(urls_added_count, changed_indexing_status_count, changed_submitt
 def main():
     try:
         urls_added_count = extract_urls()
-        changed_indexing_status_count, indexing_quota_exceeded = submit_to_indexing_api()
+        changed_indexing_status_count, indexing_quota_exceeded = check_indexing_status()
         changed_submitting_status_count, submitting_quota_exceeded = submit_to_indexing_api()
+        
         log_results(urls_added_count, changed_indexing_status_count, changed_submitting_status_count,
                     indexing_quota_exceeded, submitting_quota_exceeded)
     except Exception as e:
