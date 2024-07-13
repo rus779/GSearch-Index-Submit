@@ -3,3 +3,10 @@ config.py
 __pycache__/
 *.pyc
 venv/
+__pycache__/
+results.txt
+run-Google-Search-Update.command
+script.log
+service_account.json
+sitemaps/
+URLs.csv
