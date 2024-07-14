@@ -53,27 +53,32 @@ def extract_urls():
     sitemap_url = f"{WEB_SITE}/sitemap.xml"
     sitemaps_to_process = [sitemap_url]
     all_urls = set()
-
+    processed_sitemaps = set()
+    
     while sitemaps_to_process:
         current_sitemap = sitemaps_to_process.pop()
+        if current_sitemap in processed_sitemaps:
+            continue
+        processed_sitemaps.add(current_sitemap)
+        
         try:
             response = requests.get(current_sitemap)
             response.raise_for_status()
             save_sitemap_content(current_sitemap, response.content)
             sitemaps, urls = download_sitemaps(current_sitemap)
-            sitemaps_to_process.extend(sitemaps)
+            sitemaps_to_process.extend([s for s in sitemaps if s not in processed_sitemaps])
             all_urls.update(urls)
         except Exception as e:
             logging.error(f"Error processing sitemap {current_sitemap}: {str(e)}")
             continue
 
     filtered_urls = [url for url in all_urls if url not in EXCLUDE_URLS]
-
+    
     if os.path.exists(OUTPUT_CSV_FILE):
         existing_df = pd.read_csv(OUTPUT_CSV_FILE)
         existing_urls = set(existing_df['URL'].tolist())
         new_urls = [url for url in filtered_urls if url not in existing_urls]
-        combined_urls = list(existing_urls.union(new_urls))
+        combined_urls = new_urls + list(existing_urls)  # New URLs at the top
     else:
         new_urls = filtered_urls
         combined_urls = filtered_urls
@@ -84,7 +89,7 @@ def extract_urls():
         if USE_ALPHABETICAL_SORTING:
             matching_urls.sort()
         sorted_urls.extend(matching_urls)
-
+    
     sorted_urls = list(dict.fromkeys(sorted_urls))
 
     if os.path.exists(OUTPUT_CSV_FILE):
@@ -112,16 +117,15 @@ def extract_urls():
         new_df.to_csv(OUTPUT_CSV_FILE, index=False)
 
     logging.info(f"URLs have been saved to {OUTPUT_CSV_FILE}")
-    return len(new_urls)
+    return len(new_urls), new_urls
 
 def check_indexing_status():
     df = pd.read_csv(OUTPUT_CSV_FILE)
     df['Indexing Status'] = df['Indexing Status'].fillna('')
     df['Date of Index'] = df['Date of Index'].fillna('')
-    
     current_date = datetime.now().date()
     urls_to_check = df[
-        (df['Indexing Status'] == '') | 
+        (df['Indexing Status'] == '') |
         ((df['Indexing Status'] == 'Not Indexed') & (pd.to_datetime(df['Date of Index']).dt.date < current_date - timedelta(days=7)))
     ]['URL'].tolist()[:MAX_INDEXING_URLS_PER_RUN]
 
@@ -148,21 +152,13 @@ def check_indexing_status():
 
     df.to_csv(OUTPUT_CSV_FILE, index=False)
     logging.info(f"Indexing status check results have been updated in {OUTPUT_CSV_FILE}")
-    
     if quota_exceeded:
         logging.warning(f"Indexing status check stopped after processing {changed_indexing_status_count} URLs due to quota limit.")
-    
     return changed_indexing_status_count, quota_exceeded
 
-def submit_to_indexing_api():
+def submit_to_indexing_api(urls_to_submit):
     df = pd.read_csv(OUTPUT_CSV_FILE)
-    df['Indexing Status'] = df['Indexing Status'].fillna('')
-    df['Submitting Status'] = df['Submitting Status'].fillna('')
-    urls_to_submit = df[
-        ((df['Indexing Status'] == 'Not Indexed') | (df['Indexing Status'] == '') | df['Indexing Status'].isna()) &
-        ((df['Submitting Status'] == '') | df['Submitting Status'].isna())
-    ]['URL'].tolist()[:MAX_SUBMISSION_URLS_PER_RUN]
-
+    
     ENDPOINT = "https://indexing.googleapis.com/v3/urlNotifications:publish"
     changed_submitting_status_count = 0
     quota_exceeded = False
@@ -176,7 +172,6 @@ def submit_to_indexing_api():
         try:
             response, content = http.request(ENDPOINT, method="POST", body=json_ctn, headers={'Content-Type': 'application/json'})
             result = json.loads(content.decode())
-
             if response.status == 429 or "error" in result and result["error"].get("code") == 429:
                 logging.error(f"Google Quota exceeded for Submitting (Index API): {result.get('error', {}).get('message', 'Unknown error')}")
                 quota_exceeded = True
@@ -193,7 +188,6 @@ def submit_to_indexing_api():
 
     df.to_csv(OUTPUT_CSV_FILE, index=False)
     logging.info(f"Submission results have been updated in {OUTPUT_CSV_FILE}")
-    
     return changed_submitting_status_count, quota_exceeded
 
 def log_results(urls_added_count, changed_indexing_status_count, changed_submitting_status_count,
@@ -237,9 +231,32 @@ def log_results(urls_added_count, changed_indexing_status_count, changed_submitt
 
 def main():
     try:
-        urls_added_count = extract_urls()
+        urls_added_count, new_urls = extract_urls()
+        
+        # Ask for prioritized URLs
+        prioritized_urls = input("Do you want to prioritize some URLs for submitting? Provide relative or absolute URLs, using comma (Press Enter to skip this): ")
+        if prioritized_urls:
+            prioritized_urls = [url.strip() for url in prioritized_urls.split(',')]
+            # Convert relative URLs to absolute
+            prioritized_urls = [url if url.startswith('http') else f"{WEB_SITE}/{url.lstrip('/')}" for url in prioritized_urls]
+        else:
+            prioritized_urls = []  # Ensure it's an empty list if no input
+
+        # Prepare URLs for submission
+        df = pd.read_csv(OUTPUT_CSV_FILE)
+        urls_to_submit = (
+            prioritized_urls +
+            new_urls +
+            df[
+                ((df['Indexing Status'] == 'Not Indexed') | (df['Indexing Status'] == '') | df['Indexing Status'].isna()) &
+                ((df['Submitting Status'] == '') | df['Submitting Status'].isna())
+            ]['URL'].tolist()
+        )
+
+        urls_to_submit = list(dict.fromkeys(urls_to_submit))[:MAX_SUBMISSION_URLS_PER_RUN]
+        
+        changed_submitting_status_count, submitting_quota_exceeded = submit_to_indexing_api(urls_to_submit)
         changed_indexing_status_count, indexing_quota_exceeded = check_indexing_status()
-        changed_submitting_status_count, submitting_quota_exceeded = submit_to_indexing_api()
         
         log_results(urls_added_count, changed_indexing_status_count, changed_submitting_status_count,
                     indexing_quota_exceeded, submitting_quota_exceeded)
