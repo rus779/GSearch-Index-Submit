@@ -1,47 +1,60 @@
-This script is made for these purposes: to get 'index' status for URLs on your site and to submit non-indexed URLs to Google Search Console. 
-This way Google will know about your pages and their content (new and old) faster and you'll be sure about their index situation.
+## Google Search Console URL Indexing Script
 
-It uses Google's official APIs: Google Custom Search API (for getting index status) and Indexing API (for submitting to index).
-There are limits set by Google (and they're presented in 'config' file):
-1) 100 URLs per day to get index status
-2) 200 URLs per day to submit URLs to Google Index.
+This Python script automates the process of checking the indexing status of URLs on your website and submitting non-indexed URLs to Google Search Console for faster indexing. It leverages Google's official APIs: Google Custom Search API for retrieving indexing status and Indexing API for submitting URLs.
 
-It's great because it allows you automate this process without Google UI and it has bigger submitting limit. Google may know about your pages in different ways but nonAPI ways are more limited:
-1) through sitemaps – you can add a link to your sitemap(s) in Google Search Console, but it takes a lot of time to Google to use them. even Google itself don't recommend it (https://developers.google.com/search/apis/indexing-api/v3/quickstart)
-2) through manual checking and submitting with Google Search Console – it slow, and has very narrow limit (about 10 URLs per day)
-3) through links on your site or other sites (you can't really control that).
+### Key Features
+- Retrieves indexing status for up to 100 URLs per run
+- Submits up to 200 non-indexed URLs to Google Search Console per run
+- Extracts URLs from sitemaps (supports multiple sitemaps)
+- Allows excluding specific URLs from indexing
+- Sorts URLs based on configurable rules and optional alphabetical sorting
+- Stores URL data in a CSV file for tracking and future runs
 
-To use this script you'll need 3 things:
-1) Custom Search Engine ID
-2) API key
-3) Service Account JSON Key.
+### Prerequisites
+To use this script, you'll need:
+1. Custom Search Engine ID
+2. API key for Google Custom Search API
+3. Service Account JSON Key for Google Indexing API
 
-You may use these sources to setup them:
-1) Programmable Search Engine (for getting index status): https://developers.google.com/custom-search/docs/overview
-2) Indexing API Quickstart (for submitting to Google Search): https://developers.google.com/search/apis/indexing-api/v3/quickstart
-3) article that inspired me with some instraction and code: https://medium.com/@vithanage.sadith/automating-url-submission-to-google-for-indexing-with-custom-search-api-and-indexing-api-d993908ad176
+Refer to these resources for setup instructions:
+- [Programmable Search Engine](https://developers.google.com/custom-search/docs/overview)
+- [Indexing API Quickstart](https://developers.google.com/search/apis/indexing-api/v3/quickstart)
 
-Steps you need to do to work with this script:
-0) create a folder where all files will be stored
-1) download the script files ('setup', 'Google-Search-Update') to the folder
-2) put into this folder 'Service Account JSON Key'
-3) rename this file = 'service_account'
-4) run 'setup' file (like 'python3 setup.py')
-5) answer the questions it'll ask you
-6) the code will do the follow:
-  = creates virtual environment, so nothing on your machine will be affected
-  = installs things it needs to run the code
-  = creates 'config' file where all variables will be stored (the questions above will write down them for you there, but you can change them anytime)
-  = creates 'sitemap' folder (there downloaded sitemaps will be stored)
-  = creates 'run-Google-Search-Update.command' file so you can run the script by click (or you can start the script manually).
+### Setup
+1. Create a folder to store the script files.
+2. Download the script files (`setup.py`, `Google-Search-Update.py`) into the folder.
+3. Place your Service Account JSON Key file in the same folder and rename it to `service_account.json`.
+4. Run the setup script: `python3 setup.py`
+5. Answer the prompts to configure the script settings.
 
-After setup you can run 'run-Google-Search-Update' file and it will do the following:
-1) download sitemap files (if there are several of them it'll get them too)
-2) extract URLs from it. URLs and their statuses will be stored in 'URLs.csv' file
-3) sort them if needed (it follows the rules from 'config')
-4) asks Google about their index status and write down it 
-5) submit the URLs without 'Indexed' status to Google
-6) at the end you'll get:
-   = 'URLs' file with statuses
-   = brief summary of what have been done on the screen and in the 'results.txt' file
-   = 'script.log' file where it writes down what happened with more details.
+The setup script will:
+- Create a virtual environment to isolate dependencies
+- Install required Python packages
+- Create a `config.py` file with your settings
+- Create a `sitemaps` folder to store downloaded sitemaps
+- Create a `run-Google-Search-Update.command` file for easy script execution
+
+### Usage
+After setup, you can run the script by double-clicking the `run-Google-Search-Update.command` file or executing it from the terminal.
+
+The script will perform the following steps:
+1. Download sitemap files and extract URLs
+2. Sort URLs based on configured rules
+3. Check the indexing status of URLs using Google Custom Search API
+4. Submit non-indexed URLs to Google Search Console using Indexing API
+5. Store URL data and statuses in the `URLs.csv` file
+
+Upon completion, you will find:
+- `URLs.csv`: File containing URLs and their indexing statuses
+- `results.txt`: Summary of the script's actions
+- `script.log`: Detailed log of the script's execution
+
+### Limitations
+Please note the following limitations set by Google:
+- 100 URLs per day for checking indexing status
+- 200 URLs per day for submitting to Google Search Console
+
+### Troubleshooting
+If you encounter any issues or errors, please check the `script.log` file for detailed information. Ensure that your API keys and service account JSON key are valid and have the necessary permissions.
+
+For further assistance, please refer to the Google Search Console and Google Cloud Platform documentation or contact their support channels.
