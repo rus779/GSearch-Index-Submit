@@ -118,7 +118,12 @@ def check_indexing_status():
     df = pd.read_csv(OUTPUT_CSV_FILE)
     df['Indexing Status'] = df['Indexing Status'].fillna('')
     df['Date of Index'] = df['Date of Index'].fillna('')
-    urls_to_check = df[df['Indexing Status'] == '']['URL'].tolist()[:MAX_INDEXING_URLS_PER_RUN]
+    
+    current_date = datetime.now().date()
+    urls_to_check = df[
+        (df['Indexing Status'] == '') | 
+        ((df['Indexing Status'] == 'Not Indexed') & (pd.to_datetime(df['Date of Index']).dt.date < current_date - timedelta(days=7)))
+    ]['URL'].tolist()[:MAX_INDEXING_URLS_PER_RUN]
 
     service = build("customsearch", "v1", developerKey=API_KEY)
     changed_indexing_status_count = 0
@@ -196,23 +201,27 @@ def log_results(urls_added_count, changed_indexing_status_count, changed_submitt
     df = pd.read_csv(OUTPUT_CSV_FILE)
     total_urls = len(df)
     total_indexed = len(df[df['Indexing Status'] == 'Indexed'])
+    total_not_indexed = len(df[df['Indexing Status'] == 'Not Indexed'])
     total_submitted = len(df[df['Submitting Status'] == 'Submitted'])
 
     results_message = (
-        f"Date and Time: {datetime.now()}\n"
+        f"It's done ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}).\n"
         f"1. URLs added from sitemap\n"
         f"   now = {urls_added_count}\n"
         f"   overall = {total_urls}\n"
         f"2. URLs indexed\n"
         f"   now = {changed_indexing_status_count}\n"
         f"   overall = {total_indexed}\n"
+        f"3. URLs NOT indexed\n"
+        f"   now = {changed_indexing_status_count if df['Indexing Status'].eq('Not Indexed').sum() > 0 else 0}\n"
+        f"   overall = {total_not_indexed}\n"
     )
 
     if indexing_quota_exceeded:
         results_message += "Google Quota exceeded for Indexing (Search API)\n"
 
     results_message += (
-        f"3. URLs submitted\n"
+        f"4. URLs submitted\n"
         f"   now = {changed_submitting_status_count}\n"
         f"   overall = {total_submitted}\n"
     )
@@ -223,6 +232,7 @@ def log_results(urls_added_count, changed_indexing_status_count, changed_submitt
     with open('results.txt', 'a') as f:
         f.write(results_message)
         f.write("\n")
+
     print(results_message)
 
 def main():
