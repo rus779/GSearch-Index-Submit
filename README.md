@@ -6,14 +6,20 @@ There are limits set by Google (and they're presented in 'config' file):
 1) 100 URLs per day to get index status
 2) 200 URLs per day to submit URLs to Google Index.
 
-It's great because it allows you automate this process without Google UI and it has bigger submitting limit.
+It's great because it allows you automate this process without Google UI and it has bigger submitting limit. Google may know about your pages in different ways but nonAPI ways are more limited:
+1) through sitemaps – you can add a link to your sitemap(s) in Google Search Console, but it takes a lot of time to Google to use them. even Google itself don't recommend it (https://developers.google.com/search/apis/indexing-api/v3/quickstart)
+2) through manual checking and submitting with Google Search Console – it slow, and has very narrow limit (about 10 URLs per day)
+3) through links on your site or other sites (you can't really control that).
 
 To use this script you'll need 3 things:
 1) Custom Search Engine ID
 2) API key
 3) Service Account JSON Key.
 
-You may use this article for the instructions: https://medium.com/@vithanage.sadith/automating-url-submission-to-google-for-indexing-with-custom-search-api-and-indexing-api-d993908ad176
+You may use these sources to setup them:
+1) Programmable Search Engine (for getting index status): https://developers.google.com/custom-search/docs/overview
+2) Indexing API Quickstart (for submitting to Google Search): https://developers.google.com/search/apis/indexing-api/v3/quickstart
+3) article that inspired me with some instraction and code: https://medium.com/@vithanage.sadith/automating-url-submission-to-google-for-indexing-with-custom-search-api-and-indexing-api-d993908ad176
 
 Steps you need to do to work with this script:
 0) create a folder where all files will be stored
