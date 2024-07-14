@@ -1,11 +1,15 @@
+Here is an updated version of the README file with the requested additions:
+
 ## Google Search Console URL Indexing Script
 
 This Python script automates the process of checking the indexing status of URLs on your website and submitting non-indexed URLs to Google Search Console for faster indexing. It leverages Google's official APIs: Google Custom Search API for retrieving indexing status and Indexing API for submitting URLs.
 
 ### Key Features
-- Retrieves indexing status for up to 100 URLs per run
-- Submits up to 200 non-indexed URLs to Google Search Console per run
+- Retrieves indexing status for up to 100 URLs per day
+- Submits up to 200 non-indexed URLs to Google Search Console per day
 - Extracts URLs from sitemaps (supports multiple sitemaps)
+- Prioritizes submitting new URLs extracted from sitemaps, as they are likely the newest content
+- Allows manually specifying prioritized URLs for submission during script execution
 - Allows excluding specific URLs from indexing
 - Sorts URLs based on configurable rules and optional alphabetical sorting
 - Stores URL data in a CSV file for tracking and future runs
@@ -40,9 +44,11 @@ After setup, you can run the script by double-clicking the `run-Google-Search-Up
 The script will perform the following steps:
 1. Download sitemap files and extract URLs
 2. Sort URLs based on configured rules
-3. Check the indexing status of URLs using Google Custom Search API
-4. Submit non-indexed URLs to Google Search Console using Indexing API
-5. Store URL data and statuses in the `URLs.csv` file
+3. Prompt for manually prioritized URLs to submit (optional)
+4. Prioritize submitting new URLs from sitemaps and manually specified URLs
+5. Check the indexing status of URLs using Google Custom Search API
+6. Submit non-indexed URLs to Google Search Console using Indexing API
+7. Store URL data and statuses in the `URLs.csv` file
 
 Upon completion, you will find:
 - `URLs.csv`: File containing URLs and their indexing statuses
