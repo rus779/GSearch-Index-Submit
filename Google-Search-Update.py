@@ -125,21 +125,25 @@ def check_indexing_status():
     df['Date of Index'] = df['Date of Index'].fillna('')
     current_date = datetime.now().date()
     urls_to_check = df[
-        (df['Indexing Status'] == '') |
+        (df['Indexing Status'] == '') | 
         ((df['Indexing Status'] == 'Not Indexed') & (pd.to_datetime(df['Date of Index']).dt.date < current_date - timedelta(days=7)))
     ]['URL'].tolist()[:MAX_INDEXING_URLS_PER_RUN]
-
+    
     service = build("customsearch", "v1", developerKey=API_KEY)
     changed_indexing_status_count = 0
+    newly_not_indexed_count = 0
     quota_exceeded = False
-
+    
     for url in urls_to_check:
         try:
             result = service.cse().list(q=f"site:{url}", cx=CUSTOM_SEARCH_ENGINE_ID).execute()
             if 'items' in result and len(result['items']) > 0:
+                if df.loc[df['URL'] == url, 'Indexing Status'].iloc[0] != 'Indexed':
+                    changed_indexing_status_count += 1
                 df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['Indexed', datetime.now().strftime("%Y-%m-%d")]
-                changed_indexing_status_count += 1
             else:
+                if df.loc[df['URL'] == url, 'Indexing Status'].iloc[0] != 'Not Indexed':
+                    newly_not_indexed_count += 1
                 df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['Not Indexed', datetime.now().strftime("%Y-%m-%d")]
         except HttpError as e:
             if e.resp.status == 429:
@@ -149,12 +153,14 @@ def check_indexing_status():
             else:
                 logging.error(f"Error checking indexing status for URL {url}: {str(e)}")
                 df.loc[df['URL'] == url, ['Indexing Status', 'Date of Index']] = ['', '']
-
+    
     df.to_csv(OUTPUT_CSV_FILE, index=False)
     logging.info(f"Indexing status check results have been updated in {OUTPUT_CSV_FILE}")
+    
     if quota_exceeded:
-        logging.warning(f"Indexing status check stopped after processing {changed_indexing_status_count} URLs due to quota limit.")
-    return changed_indexing_status_count, quota_exceeded
+        logging.warning(f"Indexing status check stopped after processing {changed_indexing_status_count + newly_not_indexed_count} URLs due to quota limit.")
+    
+    return changed_indexing_status_count, newly_not_indexed_count, quota_exceeded
 
 def submit_to_indexing_api(urls_to_submit):
     df = pd.read_csv(OUTPUT_CSV_FILE)
@@ -190,49 +196,48 @@ def submit_to_indexing_api(urls_to_submit):
     logging.info(f"Submission results have been updated in {OUTPUT_CSV_FILE}")
     return changed_submitting_status_count, quota_exceeded
 
-def log_results(urls_added_count, changed_indexing_status_count, changed_submitting_status_count,
-                indexing_quota_exceeded, submitting_quota_exceeded):
+def log_results(urls_added_count, changed_indexing_status_count, newly_not_indexed_count, changed_submitting_status_count, indexing_quota_exceeded, submitting_quota_exceeded):
     df = pd.read_csv(OUTPUT_CSV_FILE)
     total_urls = len(df)
     total_indexed = len(df[df['Indexing Status'] == 'Indexed'])
     total_not_indexed = len(df[df['Indexing Status'] == 'Not Indexed'])
     total_submitted = len(df[df['Submitting Status'] == 'Submitted'])
-
+    
     results_message = (
         f"It's done ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}).\n"
         f"1. URLs added from sitemap\n"
-        f"   now = {urls_added_count}\n"
-        f"   overall = {total_urls}\n"
+        f" now = {urls_added_count}\n"
+        f" overall = {total_urls}\n"
         f"2. URLs indexed\n"
-        f"   now = {changed_indexing_status_count}\n"
-        f"   overall = {total_indexed}\n"
+        f" now = {changed_indexing_status_count}\n"
+        f" overall = {total_indexed}\n"
         f"3. URLs NOT indexed\n"
-        f"   now = {changed_indexing_status_count if df['Indexing Status'].eq('Not Indexed').sum() > 0 else 0}\n"
-        f"   overall = {total_not_indexed}\n"
+        f" now = {newly_not_indexed_count}\n"
+        f" overall = {total_not_indexed}\n"
     )
-
+    
     if indexing_quota_exceeded:
         results_message += "Google Quota exceeded for Indexing (Search API)\n"
-
+    
     results_message += (
         f"4. URLs submitted\n"
-        f"   now = {changed_submitting_status_count}\n"
-        f"   overall = {total_submitted}\n"
+        f" now = {changed_submitting_status_count}\n"
+        f" overall = {total_submitted}\n"
     )
-
+    
     if submitting_quota_exceeded:
         results_message += "Google Quota exceeded for Submitting (Index API)\n"
-
+    
     with open('results.txt', 'a') as f:
         f.write(results_message)
         f.write("\n")
-
+    
     print(results_message)
 
 def main():
     try:
         urls_added_count, new_urls = extract_urls()
-        
+
         # Ask for prioritized URLs
         prioritized_urls = input("Do you want to prioritize some URLs for submitting? Provide relative or absolute URLs, using comma (Press Enter to skip this): ")
         if prioritized_urls:
@@ -252,14 +257,13 @@ def main():
                 ((df['Submitting Status'] == '') | df['Submitting Status'].isna())
             ]['URL'].tolist()
         )
-
         urls_to_submit = list(dict.fromkeys(urls_to_submit))[:MAX_SUBMISSION_URLS_PER_RUN]
-        
+
         changed_submitting_status_count, submitting_quota_exceeded = submit_to_indexing_api(urls_to_submit)
-        changed_indexing_status_count, indexing_quota_exceeded = check_indexing_status()
-        
-        log_results(urls_added_count, changed_indexing_status_count, changed_submitting_status_count,
-                    indexing_quota_exceeded, submitting_quota_exceeded)
+        changed_indexing_status_count, newly_not_indexed_count, indexing_quota_exceeded = check_indexing_status()
+
+        log_results(urls_added_count, changed_indexing_status_count, newly_not_indexed_count, changed_submitting_status_count, indexing_quota_exceeded, submitting_quota_exceeded)
+
     except Exception as e:
         logging.error(f"Error in main execution: {str(e)}")
         print(f"Error: {str(e)}")
